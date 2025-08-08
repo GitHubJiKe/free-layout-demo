@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>自由布局Demo</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                    Roboto, sans-serif;
+                background: #f5f5f5;
+            }
+
+            .app {
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .header {
+                padding: 20px;
+                background: #fff;
+                border-bottom: 1px solid #e0e0e0;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .header h1 {
+                margin: 0;
+                color: #333;
+            }
+
+            .controls {
+                display: flex;
+                gap: 10px;
+            }
+
+            .controls button {
+                padding: 8px 16px;
+                border: 1px solid #ddd;
+                background: #fff;
+                border-radius: 4px;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+
+            .controls button:hover {
+                background: #f0f0f0;
+                border-color: #ccc;
+            }
+
+            .workspace {
+                flex: 1;
+                position: relative;
+                overflow: hidden;
+                background: #fff;
+            }
+
+            .grid {
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background-image: linear-gradient(
+                        rgba(0, 0, 0, 0.1) 1px,
+                        transparent 1px
+                    ),
+                    linear-gradient(
+                        90deg,
+                        rgba(0, 0, 0, 0.1) 1px,
+                        transparent 1px
+                    );
+                background-size: 20px 20px;
+                pointer-events: none;
+            }
+
+            .snap-lines {
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                pointer-events: none;
+                z-index: 10;
+            }
+
+            .snap-line {
+                position: absolute;
+                background: #ff6b6b;
+                opacity: 0.8;
+            }
+
+            .snap-line.horizontal {
+                height: 2px;
+                margin-top: -1px;
+            }
+
+            .snap-line.vertical {
+                width: 2px;
+                margin-left: -1px;
+            }
+
+            .draggable-element {
+                position: absolute;
+                background: #4ecdc4;
+                border: 2px solid #45b7aa;
+                border-radius: 6px;
+                cursor: move;
+                user-select: none;
+                transition: box-shadow 0.2s;
+            }
+
+            .draggable-element:hover {
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            }
+
+            .draggable-element.dragging {
+                z-index: 100;
+                box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+                opacity: 0.9;
+            }
+
+            .element-content {
+                padding: 10px;
+                color: #fff;
+                font-weight: 500;
+                text-align: center;
+                height: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .element-handles {
+                position: absolute;
+                bottom: 0;
+                right: 0;
+            }
+
+            .resize-handle {
+                width: 12px;
+                height: 12px;
+                background: #fff;
+                border: 1px solid #45b7aa;
+                border-radius: 2px;
+                cursor: se-resize;
+                position: absolute;
+                bottom: -6px;
+                right: -6px;
+            }
+
+            .status {
+                padding: 10px 20px;
+                background: #fff;
+                border-top: 1px solid #e0e0e0;
+                display: flex;
+                gap: 20px;
+                font-size: 14px;
+                color: #666;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="app">
+            <div class="header">
+                <h1>自由布局Demo</h1>
+                <div class="controls">
+                    <button onclick="addElement()">添加元素</button>
+                    <button onclick="toggleGrid()">切换网格</button>
+                    <button onclick="clearElements()">清空</button>
+                </div>
+            </div>
+
+            <div class="workspace" id="workspace">
+                <div class="grid" id="grid"></div>
+                <div class="snap-lines" id="snapLines"></div>
+            </div>
+
+            <div class="status">
+                <span id="elementCount">元素数量: 0</span>
+                <span id="dragStatus" style="display: none">拖拽中...</span>
+                <span id="snapStatus" style="display: none">吸附线: 0</span>
+            </div>
+        </div>
+
+        <script>
+            class FreeLayoutDemo {
+                constructor() {
+                    this.elements = [];
+                    this.draggingId = null;
+                    this.resizingId = null;
+                    this.showGrid = true;
+                    this.snapLines = [];
+                    this.elementCounter = 0;
+
+                    this.workspace = document.getElementById("workspace");
+                    this.grid = document.getElementById("grid");
+                    this.snapLinesContainer =
+                        document.getElementById("snapLines");
+
+                    this.init();
+                }
+
+                init() {
+                    // 添加初始元素
+                    this.addElement();
+                    this.addElement();
+                    this.addElement();
+
+                    // 绑定事件
+                    this.workspace.addEventListener(
+                        "mousedown",
+                        this.handleMouseDown.bind(this),
+                    );
+                    document.addEventListener(
+                        "mousemove",
+                        this.handleMouseMove.bind(this),
+                    );
+                    document.addEventListener(
+                        "mouseup",
+                        this.handleMouseUp.bind(this),
+                    );
+                }
+
+                addElement() {
+                    const element = {
+                        id: ++this.elementCounter,
+                        x: Math.random() * 400 + 50,
+                        y: Math.random() * 300 + 50,
+                        width: 120,
+                        height: 80,
+                        content: `元素 ${this.elementCounter}`,
+                        startX: 0,
+                        startY: 0,
+                    };
+
+                    this.elements.push(element);
+                    this.renderElement(element);
+                    this.updateStatus();
+                }
+
+                renderElement(element) {
+                    const el = document.createElement("div");
+                    el.className = "draggable-element";
+                    el.id = `element-${element.id}`;
+                    el.style.left = `${element.x}px`;
+                    el.style.top = `${element.y}px`;
+                    el.style.width = `${element.width}px`;
+                    el.style.height = `${element.height}px`;
+
+                    el.innerHTML = `
+                    <div class="element-content">${element.content}</div>
+                    <div class="element-handles">
+                        <div class="resize-handle" data-element-id="${element.id}"></div>
+                    </div>
+                `;
+
+                    this.workspace.appendChild(el);
+                }
+
+                toggleGrid() {
+                    this.showGrid = !this.showGrid;
+                    this.grid.style.display = this.showGrid ? "block" : "none";
+                }
+
+                clearElements() {
+                    this.elements = [];
+                    this.elementCounter = 0;
+                    this.workspace
+                        .querySelectorAll(".draggable-element")
+                        .forEach((el) => el.remove());
+                    this.clearSnapLines();
+                    this.updateStatus();
+                }
+
+                handleMouseDown(event) {
+                    const element = event.target.closest(".draggable-element");
+                    if (!element) return;
+
+                    const elementId = parseInt(
+                        element.id.replace("element-", ""),
+                    );
+                    const elementData = this.elements.find(
+                        (el) => el.id === elementId,
+                    );
+
+                    if (event.target.classList.contains("resize-handle")) {
+                        this.startResize(event, elementData);
+                    } else {
+                        this.startDrag(event, elementData);
+                    }
+                }
+
+                startDrag(event, element) {
+                    this.draggingId = element.id;
+                    const rect = this.workspace.getBoundingClientRect();
+                    element.startX = event.clientX - rect.left - element.x;
+                    element.startY = event.clientY - rect.top - element.y;
+
+                    this.updateDragStatus(true);
+                }
+
+                startResize(event, element) {
+                    this.resizingId = element.id;
+                    event.stopPropagation();
+                }
+
+                handleMouseMove(event) {
+                    if (this.draggingId) {
+                        this.handleDrag(event);
+                    } else if (this.resizingId) {
+                        this.handleResize(event);
+                    }
+                }
+
+                handleDrag(event) {
+                    const element = this.elements.find(
+                        (el) => el.id === this.draggingId,
+                    );
+                    if (!element) return;
+
+                    const rect = this.workspace.getBoundingClientRect();
+                    let newX = event.clientX - rect.left - element.startX;
+                    let newY = event.clientY - rect.top - element.startY;
+
+                    // 边界限制
+                    newX = Math.max(
+                        0,
+                        Math.min(newX, rect.width - element.width),
+                    );
+                    newY = Math.max(
+                        0,
+                        Math.min(newY, rect.height - element.height),
+                    );
+
+                    // 计算吸附
+                    const snapResult = this.calculateSnap(element, newX, newY);
+                    element.x = snapResult.x;
+                    element.y = snapResult.y;
+
+                    this.updateElementPosition(element);
+                    this.renderSnapLines(snapResult.snapLines);
+                }
+
+                handleResize(event) {
+                    const element = this.elements.find(
+                        (el) => el.id === this.resizingId,
+                    );
+                    if (!element) return;
+
+                    const rect = this.workspace.getBoundingClientRect();
+                    const newWidth = Math.max(
+                        50,
+                        event.clientX - rect.left - element.x,
+                    );
+                    const newHeight = Math.max(
+                        30,
+                        event.clientY - rect.top - element.y,
+                    );
+
+                    element.width = newWidth;
+                    element.height = newHeight;
+                    this.updateElementSize(element);
+                }
+
+                handleMouseUp() {
+                    this.draggingId = null;
+                    this.resizingId = null;
+                    this.clearSnapLines();
+                    this.updateDragStatus(false);
+                }
+
+                calculateSnap(currentElement, newX, newY) {
+                    const snapDistance = 10;
+                    const snapLines = [];
+                    let finalX = newX;
+                    let finalY = newY;
+
+                    this.elements.forEach((element) => {
+                        if (element.id === currentElement.id) return;
+
+                        // 水平对齐
+                        const centerY = newY + currentElement.height / 2;
+                        const elementCenterY = element.y + element.height / 2;
+
+                        if (Math.abs(centerY - elementCenterY) < snapDistance) {
+                            finalY = elementCenterY - currentElement.height / 2;
+                            snapLines.push({
+                                id: `h-${element.id}`,
+                                type: "horizontal",
+                                y: elementCenterY,
+                                x1: Math.min(newX, element.x),
+                                x2: Math.max(
+                                    newX + currentElement.width,
+                                    element.x + element.width,
+                                ),
+                            });
+                        }
+
+                        // 垂直对齐
+                        const centerX = newX + currentElement.width / 2;
+                        const elementCenterX = element.x + element.width / 2;
+
+                        if (Math.abs(centerX - elementCenterX) < snapDistance) {
+                            finalX = elementCenterX - currentElement.width / 2;
+                            snapLines.push({
+                                id: `v-${element.id}`,
+                                type: "vertical",
+                                x: elementCenterX,
+                                y1: Math.min(newY, element.y),
+                                y2: Math.max(
+                                    newY + currentElement.height,
+                                    element.y + element.height,
+                                ),
+                            });
+                        }
+
+                        // 边缘对齐
+                        if (Math.abs(newX - element.x) < snapDistance) {
+                            finalX = element.x;
+                            snapLines.push({
+                                id: `left-${element.id}`,
+                                type: "vertical",
+                                x: element.x,
+                                y1: Math.min(newY, element.y),
+                                y2: Math.max(
+                                    newY + currentElement.height,
+                                    element.y + element.height,
+                                ),
+                            });
+                        }
+
+                        if (
+                            Math.abs(
+                                newX +
+                                    currentElement.width -
+                                    element.x -
+                                    element.width,
+                            ) < snapDistance
+                        ) {
+                            finalX =
+                                element.x +
+                                element.width -
+                                currentElement.width;
+                            snapLines.push({
+                                id: `right-${element.id}`,
+                                type: "vertical",
+                                x: element.x + element.width,
+                                y1: Math.min(newY, element.y),
+                                y2: Math.max(
+                                    newY + currentElement.height,
+                                    element.y + element.height,
+                                ),
+                            });
+                        }
+
+                        if (Math.abs(newY - element.y) < snapDistance) {
+                            finalY = element.y;
+                            snapLines.push({
+                                id: `top-${element.id}`,
+                                type: "horizontal",
+                                y: element.y,
+                                x1: Math.min(newX, element.x),
+                                x2: Math.max(
+                                    newX + currentElement.width,
+                                    element.x + element.width,
+                                ),
+                            });
+                        }
+
+                        if (
+                            Math.abs(
+                                newY +
+                                    currentElement.height -
+                                    element.y -
+                                    element.height,
+                            ) < snapDistance
+                        ) {
+                            finalY =
+                                element.y +
+                                element.height -
+                                currentElement.height;
+                            snapLines.push({
+                                id: `bottom-${element.id}`,
+                                type: "horizontal",
+                                y: element.y + element.height,
+                                x1: Math.min(newX, element.x),
+                                x2: Math.max(
+                                    newX + currentElement.width,
+                                    element.x + element.width,
+                                ),
+                            });
+                        }
+                    });
+
+                    return { x: finalX, y: finalY, snapLines };
+                }
+
+                updateElementPosition(element) {
+                    const el = document.getElementById(`element-${element.id}`);
+                    if (el) {
+                        el.style.left = `${element.x}px`;
+                        el.style.top = `${element.y}px`;
+                    }
+                }
+
+                updateElementSize(element) {
+                    const el = document.getElementById(`element-${element.id}`);
+                    if (el) {
+                        el.style.width = `${element.width}px`;
+                        el.style.height = `${element.height}px`;
+                    }
+                }
+
+                renderSnapLines(snapLines) {
+                    this.clearSnapLines();
+
+                    snapLines.forEach((line) => {
+                        const lineEl = document.createElement("div");
+                        lineEl.className = `snap-line ${line.type}`;
+
+                        if (line.type === "horizontal") {
+                            lineEl.style.top = `${line.y}px`;
+                            lineEl.style.left = `${line.x1}px`;
+                            lineEl.style.width = `${line.x2 - line.x1}px`;
+                            lineEl.style.height = "1px";
+                        } else {
+                            lineEl.style.left = `${line.x}px`;
+                            lineEl.style.top = `${line.y1}px`;
+                            lineEl.style.width = "1px";
+                            lineEl.style.height = `${line.y2 - line.y1}px`;
+                        }
+
+                        this.snapLinesContainer.appendChild(lineEl);
+                    });
+
+                    this.updateSnapStatus(snapLines.length);
+                }
+
+                clearSnapLines() {
+                    this.snapLinesContainer.innerHTML = "";
+                    this.updateSnapStatus(0);
+                }
+
+                updateStatus() {
+                    document.getElementById(
+                        "elementCount",
+                    ).textContent = `元素数量: ${this.elements.length}`;
+                }
+
+                updateDragStatus(isDragging) {
+                    document.getElementById("dragStatus").style.display =
+                        isDragging ? "inline" : "none";
+                }
+
+                updateSnapStatus(count) {
+                    const snapStatus = document.getElementById("snapStatus");
+                    if (count > 0) {
+                        snapStatus.textContent = `吸附线: ${count}`;
+                        snapStatus.style.display = "inline";
+                    } else {
+                        snapStatus.style.display = "none";
+                    }
+                }
+            }
+
+            // 全局函数
+            let demo;
+
+            function addElement() {
+                demo.addElement();
+            }
+
+            function toggleGrid() {
+                demo.toggleGrid();
+            }
+
+            function clearElements() {
+                demo.clearElements();
+            }
+
+            // 初始化
+            document.addEventListener("DOMContentLoaded", () => {
+                demo = new FreeLayoutDemo();
+            });
+        </script>
+    </body>
+</html>
