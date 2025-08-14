@@ -39,13 +39,13 @@ npm run preview
 
 ## 🌐 在线演示
 
-访问在线演示：[https://你的用户名.github.io/free-layout-demo](https://你的用户名.github.io/free-layout-demo)
+访问在线演示：[https://githubjike.github.io/free-layout-demo/](https://githubjike.github.io/free-layout-demo/)
 
 ## 📦 部署
 
 本项目已配置GitHub Actions自动部署到GitHub Pages。
 
-### 自动部署
+<!-- ### 自动部署
 
 1. 推送到 `main` 或 `master` 分支
 2. GitHub Actions自动构建和部署
@@ -61,7 +61,7 @@ npm install -g gh-pages
 npm run deploy
 ```
 
-详细部署说明请查看 [DEPLOYMENT.md](./DEPLOYMENT.md)
+详细部署说明请查看 [DEPLOYMENT.md](./DEPLOYMENT.md) -->
 
 ## 🏗️ 项目结构
 
