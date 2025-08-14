@@ -4,6 +4,7 @@
     "description": "自由布局吸附线Demo",
     "type": "module",
     "homepage": "https://yourusername.github.io/free-layout-demo",
+    "packageManager": "npm@10.0.0",
     "engines": {
         "node": ">=18.0.0",
         "npm": ">=8.0.0"
@@ -15,7 +16,8 @@
         "build:prod": "vite build",
         "deploy": "npm run build:prod && gh-pages -d dist",
         "check-deploy": "node scripts/check-deploy.js",
-        "test-build": "node scripts/test-build.js"
+        "test-build": "node scripts/test-build.js",
+        "test-npm": "node scripts/test-npm.js"
     },
     "dependencies": {
         "vue": "^3.4.21"
