@@ -78,6 +78,18 @@ export function useDraggable(options = {}) {
         resizingId.value = element.id;
         event.stopPropagation();
 
+        // 保存resize开始时的状态
+        const rect = workspaceRef.value.getBoundingClientRect();
+        element._resizeStartState = {
+            x: element.x,
+            y: element.y,
+            width: element.width,
+            height: element.height,
+            startX: event.clientX,
+            startY: event.clientY,
+            direction: direction
+        };
+
         const handleResizeMove = (e) => handleResize(e);
         const handleResizeEnd = () => stopResize();
 
@@ -187,10 +199,86 @@ export function useDraggable(options = {}) {
         const element = elements.value.find((el) => el.id === resizingId.value);
         if (!element) return;
 
-        const rect = workspaceRef.value.getBoundingClientRect();
-        const newWidth = Math.max(50, event.clientX - rect.left - element.x);
-        const newHeight = Math.max(30, event.clientY - rect.top - element.y);
+        // 获取resize开始时的状态
+        const startState = element._resizeStartState;
+        if (!startState) return;
 
+        const rect = workspaceRef.value.getBoundingClientRect();
+        const deltaX = event.clientX - startState.startX;
+        const deltaY = event.clientY - startState.startY;
+
+        let newX = startState.x;
+        let newY = startState.y;
+        let newWidth = startState.width;
+        let newHeight = startState.height;
+
+        // 根据不同的resize方向计算新的尺寸和位置
+        switch (startState.direction) {
+            case "se": // 右下角
+                newWidth = Math.max(50, startState.width + deltaX);
+                newHeight = Math.max(30, startState.height + deltaY);
+                break;
+            case "sw": // 左下角
+                newX = startState.x + deltaX;
+                newWidth = Math.max(50, startState.width - deltaX);
+                newHeight = Math.max(30, startState.height + deltaY);
+                break;
+            case "ne": // 右上角
+                newY = startState.y + deltaY;
+                newWidth = Math.max(50, startState.width + deltaX);
+                newHeight = Math.max(30, startState.height - deltaY);
+                break;
+            case "nw": // 左上角
+                newX = startState.x + deltaX;
+                newY = startState.y + deltaY;
+                newWidth = Math.max(50, startState.width - deltaX);
+                newHeight = Math.max(30, startState.height - deltaY);
+                break;
+            case "n": // 上边中间
+                newY = startState.y + deltaY;
+                newHeight = Math.max(30, startState.height - deltaY);
+                break;
+            case "s": // 下边中间
+                newHeight = Math.max(30, startState.height + deltaY);
+                break;
+            case "e": // 右边中间
+                newWidth = Math.max(50, startState.width + deltaX);
+                break;
+            case "w": // 左边中间
+                newX = startState.x + deltaX;
+                newWidth = Math.max(50, startState.width - deltaX);
+                break;
+        }
+
+        // 边界限制
+        if (newX < 0) {
+            newWidth += newX;
+            newX = 0;
+        }
+        if (newY < 0) {
+            newHeight += newY;
+            newY = 0;
+        }
+        if (newWidth < 50) newWidth = 50;
+        if (newHeight < 30) newHeight = 30;
+
+        // 计算resize过程中的对齐线
+        const resizeSnapLines = calculateResizeSnap(
+            element,
+            newX,
+            newY,
+            newWidth,
+            newHeight,
+            elements.value,
+            snapDistance
+        );
+
+        // 更新吸附线
+        snapLines.value = resizeSnapLines;
+
+        // 更新元素位置和尺寸
+        element.x = newX;
+        element.y = newY;
         element.width = newWidth;
         element.height = newHeight;
 
@@ -202,6 +290,11 @@ export function useDraggable(options = {}) {
         const element = elements.value.find((el) => el.id === resizingId.value);
         if (element) {
             onResizeEnd?.(element);
+
+            // 清理resize状态
+            if (element._resizeStartState) {
+                delete element._resizeStartState;
+            }
 
             // 清理事件监听器
             if (element._resizeMoveHandler) {
@@ -220,6 +313,8 @@ export function useDraggable(options = {}) {
             }
         }
 
+        // 清理吸附线
+        snapLines.value = [];
         resizingId.value = null;
     };
 
@@ -339,6 +434,122 @@ export function useDraggable(options = {}) {
         });
 
         return { x: finalX, y: finalY, snapLines };
+    };
+
+    // 计算resize过程中的对齐线
+    const calculateResizeSnap = (
+        currentElement,
+        newX,
+        newY,
+        newWidth,
+        newHeight,
+        elements,
+        snapDistance
+    ) => {
+        const snapLines = [];
+
+        elements.forEach((element) => {
+            if (element.id === currentElement.id) return;
+
+            // 中心对齐
+            const currentCenterX = newX + newWidth / 2;
+            const currentCenterY = newY + newHeight / 2;
+            const elementCenterX = element.x + element.width / 2;
+            const elementCenterY = element.y + element.height / 2;
+
+            if (Math.abs(currentCenterX - elementCenterX) < snapDistance) {
+                snapLines.push({
+                    id: `center-x-${element.id}`,
+                    type: "vertical",
+                    x: elementCenterX,
+                    y1: Math.min(newY, element.y),
+                    y2: Math.max(newY + newHeight, element.y + element.height),
+                    style: "center"
+                });
+            }
+
+            if (Math.abs(currentCenterY - elementCenterY) < snapDistance) {
+                snapLines.push({
+                    id: `center-y-${element.id}`,
+                    type: "horizontal",
+                    y: elementCenterY,
+                    x1: Math.min(newX, element.x),
+                    x2: Math.max(newX + newWidth, element.x + element.width),
+                    style: "center"
+                });
+            }
+
+            // 边缘对齐
+            if (Math.abs(newX - element.x) < snapDistance) {
+                snapLines.push({
+                    id: `left-${element.id}`,
+                    type: "vertical",
+                    x: element.x,
+                    y1: Math.min(newY, element.y),
+                    y2: Math.max(newY + newHeight, element.y + element.height),
+                    style: "edge"
+                });
+            }
+
+            if (Math.abs(newX + newWidth - element.x - element.width) < snapDistance) {
+                snapLines.push({
+                    id: `right-${element.id}`,
+                    type: "vertical",
+                    x: element.x + element.width,
+                    y1: Math.min(newY, element.y),
+                    y2: Math.max(newY + newHeight, element.y + element.height),
+                    style: "edge"
+                });
+            }
+
+            if (Math.abs(newY - element.y) < snapDistance) {
+                snapLines.push({
+                    id: `top-${element.id}`,
+                    type: "horizontal",
+                    y: element.y,
+                    x1: Math.min(newX, element.x),
+                    x2: Math.max(newX + newWidth, element.x + element.width),
+                    style: "edge"
+                });
+            }
+
+            if (Math.abs(newY + newHeight - element.y - element.height) < snapDistance) {
+                snapLines.push({
+                    id: `bottom-${element.id}`,
+                    type: "horizontal",
+                    y: element.y + element.height,
+                    x1: Math.min(newX, element.x),
+                    x2: Math.max(newX + newWidth, element.x + element.width),
+                    style: "edge"
+                });
+            }
+
+            // 尺寸匹配对齐 - 宽度匹配
+            if (Math.abs(newWidth - element.width) < snapDistance) {
+                snapLines.push({
+                    id: `width-match-${element.id}`,
+                    type: "width-match",
+                    x: newX + newWidth,
+                    y: newY + newHeight,
+                    width: element.width,
+                    style: "size-match"
+                });
+            }
+
+            // 尺寸匹配对齐 - 高度匹配
+            if (Math.abs(newHeight - element.height) < snapDistance) {
+                snapLines.push({
+                    id: `height-match-${element.id}`,
+                    type: "height-match",
+                    x: newX + newWidth,
+                    y: newY + newHeight,
+                    height: element.height,
+                    style: "size-match"
+                });
+            }
+        });
+
+        return snapLines;
     };
 
     // 处理鼠标移动

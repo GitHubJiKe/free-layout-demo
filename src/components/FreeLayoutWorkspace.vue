@@ -144,21 +144,47 @@ export default {
         };
 
         const getSnapLineStyle = (line) => {
+            const baseStyle = {
+                position: "absolute",
+                pointerEvents: "none",
+                zIndex: 1000,
+            };
+
             if (line.type === "horizontal") {
                 return {
+                    ...baseStyle,
                     top: `${line.y}px`,
                     left: `${line.x1}px`,
                     width: `${line.x2 - line.x1}px`,
-                    height: "1px",
+                    height: line.style === "center" ? "2px" : "1px",
+                    background: line.style === "center" ? "#4ecdc4" : "#ff6b6b",
+                    opacity: line.style === "center" ? "0.9" : "0.8",
                 };
-            } else {
+            } else if (line.type === "vertical") {
                 return {
+                    ...baseStyle,
                     left: `${line.x}px`,
                     top: `${line.y1}px`,
-                    width: "1px",
+                    width: line.style === "center" ? "2px" : "1px",
                     height: `${line.y2 - line.y1}px`,
+                    background: line.style === "center" ? "#4ecdc4" : "#ff6b6b",
+                    opacity: line.style === "center" ? "0.9" : "0.8",
+                };
+            } else if (line.type === "width-match" || line.type === "height-match") {
+                return {
+                    ...baseStyle,
+                    left: `${line.x}px`,
+                    top: `${line.y}px`,
+                    width: "20px",
+                    height: "20px",
+                    background: "#ffd93d",
+                    borderRadius: "50%",
+                    opacity: "0.9",
+                    transform: "translate(-50%, -50%)",
                 };
             }
+
+            return baseStyle;
         };
 
         return {

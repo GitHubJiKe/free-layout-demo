@@ -3,6 +3,7 @@ import vue from "@vitejs/plugin-vue";
 
 export default defineConfig({
     plugins: [vue()],
+    base: process.env.NODE_ENV === 'production' ? '/free-layout-demo/' : '/',
     css: {
         preprocessorOptions: {
             less: {
@@ -10,4 +11,16 @@ export default defineConfig({
             },
         },
     },
+    build: {
+        outDir: 'dist',
+        assetsDir: 'assets',
+        sourcemap: false,
+        rollupOptions: {
+            output: {
+                manualChunks: {
+                    vendor: ['vue']
+                }
+            }
+        }
+    }
 });

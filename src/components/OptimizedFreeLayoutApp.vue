@@ -400,7 +400,7 @@ export default {
         // 其他配置
         const showGrid = ref(true);
         const enableResize = ref(true);
-        const resizeHandles = ref(["se"]);
+        const resizeHandles = ref(["n", "ne", "e", "se", "s", "sw", "w", "nw"]);
         const snapDistance = ref(10);
         const enableSnap = ref(true);
         const enableMultiSelect = ref(true);

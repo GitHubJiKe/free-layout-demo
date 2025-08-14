@@ -17,6 +17,11 @@
             </slot>
         </div>
 
+        <!-- 尺寸提示 -->
+        <div class="size-hint" v-if="isResizing && showSizeHint">
+            <span class="size-text">{{ element.width }} × {{ element.height }}</span>
+        </div>
+
         <div class="element-handles" v-if="enableResize">
             <div
                 v-for="handle in resizeHandlesArray"
@@ -56,7 +61,7 @@ export default {
         },
         resizeHandles: {
             type: Array,
-            default: () => ["se"],
+            default: () => ["n", "ne", "e", "se", "s", "sw", "w", "nw"],
         },
     },
     emits: ["mousedown", "click", "resize-start"],
@@ -71,7 +76,12 @@ export default {
         const resizeHandlesArray = computed(() => {
             return Array.isArray(props.resizeHandles)
                 ? props.resizeHandles
-                : ["se"];
+                : ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
+        });
+
+        // 控制尺寸提示的显示
+        const showSizeHint = computed(() => {
+            return props.isResizing;
         });
 
         const handleMouseDown = (event) => {
@@ -95,6 +105,7 @@ export default {
         return {
             elementStyle,
             resizeHandlesArray,
+            showSizeHint,
             handleMouseDown,
             handleClick,
             handleMouseUp,
@@ -152,10 +163,33 @@ export default {
         padding: 10px;
     }
 
+    .size-hint {
+        position: absolute;
+        top: -30px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.8);
+        color: #fff;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 500;
+        pointer-events: none;
+        z-index: 1001;
+        white-space: nowrap;
+
+        .size-text {
+            font-family: 'Courier New', monospace;
+        }
+    }
+
     .element-handles {
         position: absolute;
-        bottom: 0;
-        right: 0;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
 
         .resize-handle {
             width: 12px;
@@ -165,31 +199,58 @@ export default {
             border-radius: 2px;
             cursor: se-resize;
             position: absolute;
-            bottom: -6px;
-            right: -6px;
+            pointer-events: auto;
 
-            &.se {
-                cursor: se-resize;
-            }
-
-            &.sw {
-                cursor: sw-resize;
-                left: -6px;
-                right: auto;
+            &.n {
+                cursor: n-resize;
+                top: -6px;
+                left: 50%;
+                transform: translateX(-50%);
             }
 
             &.ne {
                 cursor: ne-resize;
                 top: -6px;
-                bottom: auto;
+                right: -6px;
+            }
+
+            &.e {
+                cursor: e-resize;
+                top: 50%;
+                right: -6px;
+                transform: translateY(-50%);
+            }
+
+            &.se {
+                cursor: se-resize;
+                bottom: -6px;
+                right: -6px;
+            }
+
+            &.s {
+                cursor: s-resize;
+                bottom: -6px;
+                left: 50%;
+                transform: translateX(-50%);
+            }
+
+            &.sw {
+                cursor: sw-resize;
+                bottom: -6px;
+                left: -6px;
+            }
+
+            &.w {
+                cursor: w-resize;
+                top: 50%;
+                left: -6px;
+                transform: translateY(-50%);
             }
 
             &.nw {
                 cursor: nw-resize;
                 top: -6px;
-                bottom: auto;
                 left: -6px;
-                right: auto;
             }
         }
     }
