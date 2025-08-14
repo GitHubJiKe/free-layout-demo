@@ -22,5 +22,11 @@ export default defineConfig({
                 }
             }
         }
+    },
+    optimizeDeps: {
+        exclude: ['crypto']
+    },
+    define: {
+        global: 'globalThis'
     }
 });
