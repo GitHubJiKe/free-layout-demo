@@ -554,10 +554,26 @@ export function useDraggable(options = {}) {
 
     // 处理鼠标移动
     const handleMouseMove = (event, workspaceRef) => {
-        if (workspaceRef) {
-            const rect = workspaceRef.getBoundingClientRect();
-            mousePos.x = event.clientX - rect.left;
-            mousePos.y = event.clientY - rect.top;
+        if (!workspaceRef) return;
+
+        // 更新鼠标位置
+        const rect = workspaceRef.getBoundingClientRect();
+        mousePos.x = event.clientX - rect.left;
+        mousePos.y = event.clientY - rect.top;
+
+        // 处理拖拽
+        if (draggingId.value) {
+            handleDrag(event, workspaceRef);
+        }
+
+        // 处理调整大小
+        if (resizingId.value) {
+            handleResize(event);
+        }
+
+        // 处理框选过程中的鼠标移动
+        if (typeof window !== 'undefined' && window.selectionBoxUpdate) {
+            window.selectionBoxUpdate(mousePos.x, mousePos.y);
         }
     };
 

@@ -51,6 +51,9 @@
                 @resize-start="handleResizeStart"
                 @resize-move="handleResizeMove"
                 @resize-end="handleResizeEnd"
+                @group-elements="handleGroupElements"
+                @ungroup-elements="handleUngroupElements"
+                @delete-elements="handleDeleteElements"
                 @performance-panel-close="handlePerformancePanelClose"
             >
                 <template #element-content="{ element }">
@@ -77,6 +80,8 @@
             <span v-if="isDragging">拖拽中...</span>
             <span v-if="isResizing">调整大小中...</span>
             <span v-if="snapLinesCount > 0">吸附线: {{ snapLinesCount }}</span>
+            <span v-if="selectedCount > 0">选中: {{ selectedCount }}</span>
+            <span v-if="groupCount > 0">组合: {{ groupCount }}</span>
         </div>
 
         <!-- 性能配置面板 -->
@@ -408,11 +413,33 @@ export default {
 
         // 计算属性
         const elementCount = computed(() => elements.value.length);
+        const selectedCount = computed(() => 0); // 这里需要从workspace组件获取
+        const groupCount = computed(() => 0); // 这里需要从workspace组件获取
 
         // 方法
         const toggleGrid = () => {
             showGrid.value = !showGrid.value;
             emit("grid-toggled", showGrid.value);
+        };
+
+        // 组合相关的事件处理
+        const handleGroupElements = (groupId, selectedElements) => {
+            console.log('组合成功:', groupId, selectedElements);
+            emit("group-elements", groupId, selectedElements);
+        };
+
+        const handleUngroupElements = (groupId) => {
+            console.log('解组成功:', groupId);
+            emit("ungroup-elements", groupId);
+        };
+
+        const handleDeleteElements = (elementIds) => {
+            console.log('删除元素:', elementIds);
+            // 删除选中的元素
+            elementIds.forEach(id => {
+                removeElement(id);
+            });
+            emit("delete-elements", elementIds);
         };
 
         const exportLayoutData = () => {
@@ -605,6 +632,8 @@ export default {
             isResizing,
             snapLinesCount,
             performanceMetrics,
+            selectedCount,
+            groupCount,
 
             // 方法
             toggleGrid,
@@ -617,6 +646,9 @@ export default {
             handleResizeStart,
             handleResizeMove,
             handleResizeEnd,
+            handleGroupElements,
+            handleUngroupElements,
+            handleDeleteElements,
             handlePerformancePanelClose,
             toggleConfigPanel,
 

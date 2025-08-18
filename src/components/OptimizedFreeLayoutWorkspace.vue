@@ -3,12 +3,59 @@
         class="optimized-free-layout-workspace"
         @scroll="handleScroll"
         ref="containerRef"
+        @mousedown="handleWorkspaceMouseDown"
         @mousemove="handleMouseMove"
+        @mouseup="handleWorkspaceMouseUp"
         @mouseleave="handleMouseLeave"
         @click="handleWorkspaceClick"
     >
         <!-- 网格背景 -->
         <div class="grid" v-if="showGrid"></div>
+
+        <!-- 虚拟化渲染的可拖拽元素 -->
+        <div class="virtualized-container" :style="containerStyle">
+            <DraggableElement
+                v-for="element in displayElements"
+                :key="element.id"
+                :element="element"
+                :is-dragging="element.id === draggingId"
+                :is-resizing="element.id === resizingId"
+                :is-selected="isElementSelected(element.id)"
+                :is-in-group="isElementInGroup(element.id)"
+                :enable-resize="enableResize"
+                :resize-handles="resizeHandles"
+                @mousedown="handleElementMouseDown"
+                @click="handleElementClick"
+                @resize-start="handleResizeStart"
+                @contextmenu="handleElementContextMenu"
+            >
+                <template #default="{ element }">
+                    <slot name="element-content" :element="element">
+                        {{ element.content }}
+                    </slot>
+                </template>
+            </DraggableElement>
+        </div>
+
+        <!-- 组合边框 -->
+        <GroupBorder
+            v-for="[groupId, groupElements] in elementGroups"
+            :key="`group-${groupId}`"
+            :visible="true"
+            :bounds="getGroupBoundsForDisplay(groupId)"
+            :element-count="groupElements.length"
+            @mousedown="handleGroupMouseDown"
+            @resize-start="handleGroupResizeStart"
+        />
+
+        <!-- 选择框 -->
+        <SelectionBox
+            :visible="selectionBox.visible"
+            :start-x="selectionBox.startX"
+            :start-y="selectionBox.startY"
+            :end-x="selectionBox.endX"
+            :end-y="selectionBox.endY"
+        />
 
         <!-- 吸附线 -->
         <div class="snap-lines" v-if="snapLines.length">
@@ -20,28 +67,19 @@
             ></div>
         </div>
 
-        <!-- 虚拟化渲染的可拖拽元素 -->
-        <div class="virtualized-container" :style="containerStyle">
-            <DraggableElement
-                v-for="element in displayElements"
-                :key="element.id"
-                :element="element"
-                :is-dragging="element.id === draggingId"
-                :is-resizing="element.id === resizingId"
-                :is-selected="isElementSelected(element.id)"
-                :enable-resize="enableResize"
-                :resize-handles="resizeHandles"
-                @mousedown="handleElementMouseDown"
-                @click="handleElementClick"
-                @resize-start="handleResizeStart"
-            >
-                <template #default="{ element }">
-                    <slot name="element-content" :element="element">
-                        {{ element.content }}
-                    </slot>
-                </template>
-            </DraggableElement>
-        </div>
+        <!-- 右键菜单 -->
+        <ContextMenu
+            :visible="contextMenu.visible"
+            :x="contextMenu.x"
+            :y="contextMenu.y"
+            :target-elements="contextMenu.targetElements"
+            :can-group="canGroupSelectedElements"
+            :can-ungroup="canUngroupSelectedElements"
+            @group="handleGroupElements"
+            @ungroup="handleUngroupElements"
+            @delete="handleDeleteElements"
+            @close="hideContextMenu"
+        />
 
         <!-- 性能监控面板 -->
         <PerformancePanel
@@ -73,15 +111,22 @@
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import DraggableElement from "./DraggableElement.vue";
 import PerformancePanel from "./PerformancePanel.vue";
+import GroupBorder from "./GroupBorder.vue";
+import SelectionBox from "./SelectionBox.vue";
+import ContextMenu from "./ContextMenu.vue";
 import { useDraggable } from "../composables/useDraggable";
 import { useMultiSelect } from "../composables/useMultiSelect";
 import { usePerformanceOptimization } from "../composables/usePerformanceOptimization";
+import { useGroupManager } from "../composables/useGroupManager";
 
 export default {
     name: "OptimizedFreeLayoutWorkspace",
     components: {
         DraggableElement,
         PerformancePanel,
+        GroupBorder,
+        SelectionBox,
+        ContextMenu,
     },
     props: {
         elements: {
@@ -170,24 +215,27 @@ export default {
         "multi-drag-start",
         "multi-drag-move",
         "multi-drag-end",
+        "group-elements",
+        "ungroup-elements",
+        "delete-elements",
     ],
     setup(props, { emit }) {
         const containerRef = ref(null);
         const elementsRef = ref(props.elements);
-        const performancePanelPosition = ref(props.performancePanelPosition);
-        const performancePanelTheme = ref(props.performancePanelTheme);
-        const performancePanelCompact = ref(props.performancePanelCompact);
-        const showFps = ref(props.showFps);
-        const showRenderTime = ref(props.showRenderTime);
-        const showDragTime = ref(props.showDragTime);
-        const showMemoryUsage = ref(props.showMemoryUsage);
-        const showElementCount = ref(props.showElementCount);
-        const showTotalElements = ref(props.showTotalElements);
-        const showPerformancePanelCloseButton = ref(
-            props.showPerformancePanelCloseButton,
-        );
+        // 性能监控面板配置
+        const performancePanelPosition = ref(props.performancePanelPosition || 'top-right');
+        const performancePanelTheme = ref(props.performancePanelTheme || 'light');
+        const performancePanelCompact = ref(props.performancePanelCompact || false);
+        const showFps = ref(props.showFps !== false);
+        const showRenderTime = ref(props.showRenderTime !== false);
+        const showDragTime = ref(props.showDragTime !== false);
+        const showMemoryUsage = ref(props.showMemoryUsage !== false);
+        const showElementCount = ref(props.showElementCount !== false);
+        const showTotalElements = ref(props.showTotalElements !== false);
+        const showPerformancePanelCloseButton = ref(props.showPerformancePanelCloseButton !== false);
+
         const handlePerformancePanelClose = () => {
-            emit("performance-panel-close");
+            emit('performance-panel-close');
         };
 
         // 使用多选功能
@@ -207,98 +255,215 @@ export default {
             },
         });
 
-        // 使用性能优化hook
+        // 使用组合管理器
         const {
-            visibleItems,
-            calculateVisibleItems,
-            handleScroll: handleVirtualScroll,
-            startFrame,
-            endFrame,
-            getPerformanceMetrics,
-            updateSpatialGrid,
-            getNearbyElements,
-            throttledHandleDrag,
-            measureDrag,
-        } = usePerformanceOptimization({
-            enableVirtualization: props.enableVirtualization,
-            enableSpatialGrid: props.enableSpatialGrid,
-            enableThrottling: props.enableThrottling,
-            enableMonitoring: props.enableMonitoring,
-            showPerformancePanel: props.showPerformancePanel, // 新增：传递性能面板显示选项
-            elements: elementsRef,
-            itemHeight: props.itemHeight,
-            itemWidth: props.itemWidth,
-            buffer: props.buffer,
+            selectedElementIds,
+            groups,
+            elementGroups,
+            selectionBox: groupSelectionBox,
+            contextMenu: groupContextMenu,
+            shouldShowGroupOptions,
+            selectElement,
+            clearSelection,
+            startSelectionBox: startGroupSelectionBox,
+            updateSelectionBox: updateGroupSelectionBox,
+            endSelectionBox: endGroupSelectionBox,
+            groupSelectedElements,
+            ungroupElements,
+            ungroupSelectedGroups,
+            getGroupBounds,
+            moveGroup,
+            resizeGroup,
+            isElementInGroup,
+            getElementGroup,
+            showContextMenu: showGroupContextMenu,
+            hideContextMenu: hideGroupContextMenu
+        } = useGroupManager(elementsRef);
+
+        // 右键菜单状态
+        const contextMenu = ref({
+            visible: false,
+            x: 0,
+            y: 0,
+            targetElements: [],
         });
 
-        // 使用拖拽hook - 传递多选功能
-        const {
-            draggingId,
-            resizingId,
-            snapLines,
-            mousePos,
-            startDrag,
-            startResize,
-            handleMouseMove,
-            handleMouseLeave,
-        } = useDraggable({
-            elements: elementsRef,
-            workspaceRef: containerRef,
-            snapDistance: props.snapDistance,
-            enableSnap: props.enableSnap,
-            measureDrag: measureDrag,
-            multiSelect: props.enableMultiSelect ? multiSelect : null,
-            onDragStart: (element, event) => {
-                emit("drag-start", element, event);
-            },
-            onDragMove: (element, event) => {
-                emit("drag-move", element, event);
-            },
-            onDragEnd: (element) => {
-                emit("drag-end", element);
-            },
-            onResizeStart: (element, event, direction) => {
-                emit("resize-start", element, event, direction);
-            },
-            onResizeMove: (element, event) => {
-                emit("resize-move", element, event);
-            },
-            onResizeEnd: (element) => {
-                emit("resize-end", element);
-            },
+        const showContextMenu = (event, elements) => {
+            event.preventDefault();
+            contextMenu.value.visible = true;
+            contextMenu.value.x = event.clientX;
+            contextMenu.value.y = event.clientY;
+            contextMenu.value.targetElements = elements;
+        };
+
+        const hideContextMenu = () => {
+            contextMenu.value.visible = false;
+            contextMenu.value.targetElements = [];
+        };
+
+        const handleGroupElements = () => {
+            const groupId = groupSelectedElements();
+            if (groupId) {
+                console.log('组合成功，组合ID:', groupId);
+            }
+            hideContextMenu();
+        };
+
+        const handleUngroupElements = () => {
+            ungroupSelectedGroups();
+            console.log('解组成功');
+            hideContextMenu();
+        };
+
+        const handleDeleteElements = (elementIds) => {
+            // 实现删除逻辑
+            console.log('删除选中的元素:', elementIds);
+            hideContextMenu();
+        };
+
+        // 选择框状态
+        const selectionBox = ref({
+            visible: false,
+            startX: 0,
+            startY: 0,
+            endX: 0,
+            endY: 0,
         });
 
-        // 性能监控
-        const performanceMetrics = ref({
-            fps: 0,
-            renderTime: 0,
-            dragTime: 0,
-            memoryUsage: 0,
-        });
+        const startSelectionBox = (event) => {
+            const rect = containerRef.value.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            
+            selectionBox.value.visible = true;
+            selectionBox.value.startX = x;
+            selectionBox.value.startY = y;
+            selectionBox.value.endX = x;
+            selectionBox.value.endY = y;
+            
+            // 清空当前选择
+            clearSelection();
+        };
 
-        // 更新性能指标
-        const updatePerformanceMetrics = () => {
-            if (props.showPerformancePanel || props.enableMonitoring) {
-                const metrics = getPerformanceMetrics();
-                performanceMetrics.value = {
-                    fps: metrics.fps || 0,
-                    renderTime: metrics.renderTime || 0,
-                    dragTime: metrics.dragTime || 0,
-                    memoryUsage: metrics.memoryUsage || 0,
-                };
+        const updateSelectionBox = (event) => {
+            if (selectionBox.value.visible) {
+                const rect = containerRef.value.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                
+                selectionBox.value.endX = x;
+                selectionBox.value.endY = y;
             }
         };
 
-        // 处理滚动
-        const handleScroll = (event) => {
-            if (props.enableVirtualization) {
-                handleVirtualScroll(event);
+        const endSelectionBox = () => {
+            if (selectionBox.value.visible) {
+                // 计算选择框范围
+                const left = Math.min(selectionBox.value.startX, selectionBox.value.endX);
+                const right = Math.max(selectionBox.value.startX, selectionBox.value.endX);
+                const top = Math.min(selectionBox.value.startY, selectionBox.value.endY);
+                const bottom = Math.max(selectionBox.value.startY, selectionBox.value.endY);
+                
+                // 选择完全被选择框覆盖的组件
+                elementsRef.value.forEach(element => {
+                    const elementLeft = element.x;
+                    const elementRight = element.x + element.width;
+                    const elementTop = element.y;
+                    const elementBottom = element.y + element.height;
+                    
+                    // 检查组件是否完全被选择框覆盖
+                    // 只有当组件的所有边界都在选择框内部时，才认为被完全覆盖
+                    if (elementLeft >= left && elementRight <= right && 
+                        elementTop >= top && elementBottom <= bottom) {
+                        selectElement(element.id, true);
+                    }
+                });
+                
+                selectionBox.value.visible = false;
             }
         };
 
-        // 处理元素鼠标按下
+        const handleWorkspaceMouseDown = (event) => {
+            // 检查是否点击在空白区域
+            if (event.target === containerRef.value || event.target.classList.contains('grid')) {
+                startSelectionBox(event);
+            }
+        };
+
+        const handleWorkspaceMouseUp = (event) => {
+            endSelectionBox();
+        };
+
         const handleElementMouseDown = (event, element) => {
+            // 检查是否在组合中
+            const groupId = isElementInGroup(element.id);
+            if (groupId) {
+                // 如果点击的是组合中的元素，选择整个组合
+                const group = getElementGroup(element.id);
+                if (group) {
+                    group.elements.forEach(el => {
+                        selectElement(el.id, true);
+                    });
+                }
+            } else {
+                // 如果元素未被选中，先选中它
+                if (!selectedElementIds.value.has(element.id)) {
+                    selectElement(element.id, false);
+                }
+            }
+            
             startDrag(event, element, containerRef.value);
+        };
+
+        const handleElementContextMenu = (event, element) => {
+            // 如果当前元素未被选中，先选中它
+            if (!selectedElementIds.value.has(element.id)) {
+                selectElement(element.id, false);
+            }
+            
+            const targetElements = Array.from(selectedElementIds.value).map(id =>
+                elementsRef.value.find(el => el.id === id)
+            ).filter(Boolean);
+            
+            showContextMenu(event, targetElements);
+        };
+
+        const handleGroupMouseDown = (event) => {
+            // 处理组合拖拽
+            const groupId = getGroupIdFromEvent(event);
+            if (groupId) {
+                // 开始拖拽组合
+                startGroupDrag(event, groupId);
+            }
+        };
+
+        const handleGroupResizeStart = (event, handle) => {
+            const groupId = getGroupIdFromEvent(event);
+            if (groupId) {
+                startGroupResize(event, groupId, handle);
+            }
+        };
+
+        // 从事件中获取组合ID
+        const getGroupIdFromEvent = (event) => {
+            const groupBorder = event.target.closest('.group-border');
+            if (groupBorder) {
+                // 从DOM属性或数据中获取组合ID
+                return parseInt(groupBorder.dataset.groupId);
+            }
+            return null;
+        };
+
+        // 开始组合拖拽
+        const startGroupDrag = (event, groupId) => {
+            // 实现组合拖拽逻辑
+            console.log('开始拖拽组合:', groupId);
+        };
+
+        // 开始组合调整大小
+        const startGroupResize = (event, groupId, handle) => {
+            // 实现组合调整大小逻辑
+            console.log('开始调整组合大小:', groupId, handle);
         };
 
         // 处理调整大小开始
@@ -395,20 +560,31 @@ export default {
             return visibleItems.value;
         });
 
-        // 监听元素变化
-        watch(
-            () => props.elements,
-            (newElements) => {
-                elementsRef.value = newElements;
-                if (props.enableSpatialGrid) {
-                    updateSpatialGrid(newElements);
+        // 检查元素是否被选中
+        const isElementSelected = (elementId) => {
+            return selectedElementIds.value.has(elementId);
+        };
+
+        // 获取组合边界
+        const getGroupBoundsForDisplay = (groupId) => {
+            return getGroupBounds(groupId);
+        };
+
+        // 检查是否可以组合选中的元素
+        const canGroupSelectedElements = computed(() => {
+            return selectedElementIds.value.size >= 2;
+        });
+
+        // 检查是否可以解组选中的元素
+        const canUngroupSelectedElements = computed(() => {
+            let hasGroupedElements = false;
+            selectedElementIds.value.forEach(elementId => {
+                if (isElementInGroup(elementId)) {
+                    hasGroupedElements = true;
                 }
-                if (props.enableVirtualization) {
-                    calculateVisibleItems();
-                }
-            },
-            { deep: true, immediate: true },
-        );
+            });
+            return hasGroupedElements;
+        });
 
         // 渲染循环
         let animationFrameId;
@@ -445,57 +621,191 @@ export default {
             }
         });
 
-        // 处理元素点击 - 只在按住 Command 键时才选中
-        const handleElementClick = (event, element) => {
-            if (props.enableMultiSelect) {
-                // 只有在按住 Command 键时才进行多选操作
-                if (multiSelect.isCommandPressed(event)) {
-                    multiSelect.selectElement(element.id, event);
-                } else {
-                    // 普通点击只选择当前元素，清除其他选择
-                    multiSelect.clearSelection();
-                    multiSelect.selectElement(element.id, event);
+        // 使用性能优化hook
+        const {
+            visibleItems,
+            calculateVisibleItems,
+            handleScroll: handleVirtualScroll,
+            startFrame,
+            endFrame,
+            getPerformanceMetrics,
+            updateSpatialGrid,
+            getNearbyElements,
+            throttledHandleDrag,
+            measureDrag,
+        } = usePerformanceOptimization({
+            enableVirtualization: props.enableVirtualization,
+            enableSpatialGrid: props.enableSpatialGrid,
+            enableThrottling: props.enableThrottling,
+            enableMonitoring: props.enableMonitoring,
+            showPerformancePanel: props.showPerformancePanel,
+            elements: elementsRef,
+            itemHeight: props.itemHeight,
+            itemWidth: props.itemWidth,
+            buffer: props.buffer,
+        });
+
+        // 监听元素变化
+        watch(
+            () => props.elements,
+            (newElements) => {
+                elementsRef.value = newElements;
+                if (props.enableSpatialGrid) {
+                    updateSpatialGrid(newElements);
                 }
+                if (props.enableVirtualization) {
+                    calculateVisibleItems();
+                }
+            },
+            { deep: true, immediate: true },
+        );
+
+        // 使用拖拽hook
+        const {
+            draggingId,
+            resizingId,
+            snapLines,
+            mousePos,
+            startDrag,
+            startResize,
+            handleMouseMove,
+            handleMouseLeave,
+        } = useDraggable({
+            elements: elementsRef,
+            workspaceRef: containerRef,
+            snapDistance: props.snapDistance,
+            enableSnap: props.enableSnap,
+            measureDrag: measureDrag,
+            multiSelect: props.enableMultiSelect ? multiSelect : null,
+            onDragStart: (element, event) => {
+                emit("drag-start", element, event);
+            },
+            onDragMove: (element, event) => {
+                emit("drag-move", element, event);
+            },
+            onDragEnd: (element) => {
+                emit("drag-end", element);
+            },
+            onResizeStart: (element, event, direction) => {
+                emit("resize-start", element, event, direction);
+            },
+            onResizeMove: (element, event) => {
+                emit("resize-move", element, event);
+            },
+            onResizeEnd: (element) => {
+                emit("resize-end", element);
+            },
+        });
+
+        // 性能监控
+        const performanceMetrics = ref({
+            fps: 0,
+            renderTime: 0,
+            dragTime: 0,
+            memoryUsage: 0,
+        });
+
+        // 更新性能指标
+        const updatePerformanceMetrics = () => {
+            if (props.showPerformancePanel || props.enableMonitoring) {
+                const metrics = getPerformanceMetrics();
+                performanceMetrics.value = {
+                    fps: metrics.fps || 0,
+                    renderTime: metrics.renderTime || 0,
+                    dragTime: metrics.dragTime || 0,
+                    memoryUsage: metrics.memoryUsage || 0,
+                };
+            }
+        };
+
+        // 处理滚动
+        const handleScroll = (event) => {
+            if (props.enableVirtualization) {
+                handleVirtualScroll(event);
+            }
+        };
+
+        // 处理元素点击
+        const handleElementClick = (event, element) => {
+            // 如果当前元素未被选中，先选中它
+            if (!selectedElementIds.value.has(element.id)) {
+                selectElement(element.id, false);
             }
         };
 
         // 处理工作空间点击（清除选择）
         const handleWorkspaceClick = (event) => {
-            if (
-                props.enableMultiSelect &&
-                event.target === event.currentTarget
-            ) {
-                multiSelect.clearSelection();
+            // 点击空白区域时清空选择
+            if (!draggingId.value && !resizingId.value) {
+                clearSelection();
             }
         };
 
-        // 检查元素是否被选中
-        const isElementSelected = (elementId) => {
-            return props.enableMultiSelect
-                ? multiSelect.isElementSelected(elementId)
-                : false;
-        };
-
         return {
+            // 基础引用
             containerRef,
+            
+            // 拖拽状态
             draggingId,
             resizingId,
             snapLines,
             mousePos,
+            
+            // 组合功能
+            selectedElementIds,
+            groups,
+            elementGroups,
+            selectionBox,
+            contextMenu,
+            canGroupSelectedElements,
+            canUngroupSelectedElements,
+            
+            // 性能优化
             visibleItems,
             displayElements,
+            containerStyle,
             performanceMetrics,
+            
+            // 多选功能
+            multiSelect: props.enableMultiSelect ? multiSelect : null,
+            getSelectedCount: props.enableMultiSelect ? multiSelect.getSelectedCount : () => 0,
+            
+            // 事件处理
+            handleElementClick,
+            handleElementMouseDown,
+            handleElementContextMenu,
+            handleResizeStart,
+            handleWorkspaceClick,
+            handleWorkspaceMouseDown,
+            handleWorkspaceMouseUp,
+            handleGroupMouseDown,
+            handleGroupResizeStart,
+            handleScroll,
+            handleMouseMove,
+            handleMouseLeave,
+            
+            // 组合操作
+            handleGroupElements,
+            handleUngroupElements,
+            handleDeleteElements,
+            showContextMenu,
+            hideContextMenu,
+            
+            // 选择框操作
+            startSelectionBox,
+            updateSelectionBox,
+            endSelectionBox,
+            
+            // 工具函数
+            getSnapLineStyle,
+            isElementSelected,
+            isElementInGroup,
+            getGroupBoundsForDisplay,
+            
+            // 性能监控面板
             performancePanelPosition,
             performancePanelTheme,
             performancePanelCompact,
-            handleScroll,
-            handleElementMouseDown,
-            handleResizeStart,
-            handleMouseMove: (event) =>
-                handleMouseMove(event, containerRef.value),
-            handleMouseLeave,
-            getSnapLineStyle,
-            containerStyle,
             showFps,
             showRenderTime,
             showDragTime,
@@ -504,9 +814,6 @@ export default {
             showTotalElements,
             showPerformancePanelCloseButton,
             handlePerformancePanelClose,
-            isElementSelected,
-            getSelectedCount: multiSelect.getSelectedCount,
-            handleElementClick,
         };
     },
 };

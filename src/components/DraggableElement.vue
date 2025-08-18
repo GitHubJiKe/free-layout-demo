@@ -5,11 +5,13 @@
             { dragging: isDragging },
             { resizing: isResizing },
             { selected: isSelected },
+            { 'in-group': isInGroup }
         ]"
         :style="elementStyle"
         @mousedown="handleMouseDown"
         @click="handleClick"
         @mouseup="handleMouseUp"
+        @contextmenu="handleContextMenu"
     >
         <div class="element-content">
             <slot :element="element">
@@ -17,12 +19,22 @@
             </slot>
         </div>
 
+        <!-- 选择指示器 -->
+        <div v-if="isSelected" class="selection-indicator">
+            <div class="selection-dot"></div>
+        </div>
+
+        <!-- 组合指示器 -->
+        <div v-if="isInGroup" class="group-indicator">
+            <span class="group-icon">🔗</span>
+        </div>
+
         <!-- 尺寸提示 -->
         <div class="size-hint" v-if="isResizing && showSizeHint">
             <span class="size-text">{{ element.width }} × {{ element.height }}</span>
         </div>
 
-        <div class="element-handles" v-if="enableResize">
+        <div class="element-handles" v-if="enableResize && !isInGroup">
             <div
                 v-for="handle in resizeHandlesArray"
                 :key="handle"
@@ -55,6 +67,10 @@ export default {
             type: Boolean,
             default: false,
         },
+        isInGroup: {
+            type: Boolean,
+            default: false,
+        },
         enableResize: {
             type: Boolean,
             default: true,
@@ -64,7 +80,7 @@ export default {
             default: () => ["n", "ne", "e", "se", "s", "sw", "w", "nw"],
         },
     },
-    emits: ["mousedown", "click", "resize-start"],
+    emits: ["mousedown", "click", "resize-start", "contextmenu"],
     setup(props, { emit }) {
         const elementStyle = computed(() => ({
             left: `${props.element.x}px`,
@@ -102,6 +118,11 @@ export default {
             emit("resize-start", event, props.element, position);
         };
 
+        const handleContextMenu = (event) => {
+            event.preventDefault();
+            emit("contextmenu", event, props.element);
+        };
+
         return {
             elementStyle,
             resizeHandlesArray,
@@ -110,6 +131,7 @@ export default {
             handleClick,
             handleMouseUp,
             handleResizeStart,
+            handleContextMenu,
         };
     },
 };
@@ -152,6 +174,15 @@ export default {
         }
     }
 
+    &.in-group {
+        border-color: #4ecdc4;
+        border-style: solid;
+        
+        &:hover {
+            border-color: #45b7aa;
+        }
+    }
+
     .element-content {
         color: #fff;
         font-weight: 500;
@@ -161,6 +192,42 @@ export default {
         align-items: center;
         justify-content: center;
         padding: 10px;
+    }
+
+    .selection-indicator {
+        position: absolute;
+        top: -8px;
+        left: -8px;
+        pointer-events: none;
+    }
+
+    .selection-dot {
+        width: 16px;
+        height: 16px;
+        background: #ff6b6b;
+        border: 2px solid #fff;
+        border-radius: 50%;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .group-indicator {
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        pointer-events: none;
+    }
+
+    .group-icon {
+        width: 16px;
+        height: 16px;
+        background: #4ecdc4;
+        border: 2px solid #fff;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     }
 
     .size-hint {
